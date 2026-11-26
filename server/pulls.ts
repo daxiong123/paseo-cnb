@@ -106,15 +106,36 @@ export async function createReviewWorkspace(paseo: Paseo, workspace: Workspace, 
     throw new Error("拉取到的提交与选定的 PR 版本不一致，请刷新");
   }
   const title = `评审 CNB PR #${pr.number} · ${Array.from(pr.title).slice(0, 130).join("")}`;
+  const branchName = `cnb/review-${pr.number}-${operation.slice(0, 10)}`;
   const handle = await paseo.workspaces.create({
     source: {
       kind: "worktree", action: "branch-off", cwd, projectId: workspace.projectId,
-      refName: ref, branchName: `cnb/review-${pr.number}-${operation.slice(0, 10)}`,
+      refName: ref, branchName,
     },
     title,
     metadata: { [pullKey]: { repositoryId: repo.id, path: repo.path, number: pr.number, reviewSha: pr.head.sha } },
     idempotencyKey: `better-paseo-cnb:review:${operation}`,
   });
+  const target = await getWorkspace(paseo, handle.id);
+  const link = metadata(target);
+  if (target.projectId !== workspace.projectId || link?.repositoryId !== repo.id
+    || link.number !== pr.number || link.reviewSha !== pr.head.sha) {
+    console.warn("cnb.pull.worktree.link-changed", {
+      workspaceId: handle.id, operation, repo: repo.path, number: pr.number, currentNumber: link?.number,
+      currentRepositoryId: link?.repositoryId, currentReviewSha: link?.reviewSha,
+    });
+    throw new Error(`工作区 ${handle.id} 的 PR 关联已变化，请检查工作区后重新打开评审`);
+  }
+  const [branch, head] = await Promise.all([
+    git(target.workspaceDirectory, ["branch", "--show-current"]),
+    git(target.workspaceDirectory, ["rev-parse", "--verify", "HEAD"]),
+  ]);
+  if (branch !== branchName || head !== pr.head.sha) {
+    console.warn("cnb.pull.worktree.checkout-changed", {
+      workspaceId: handle.id, operation, branch, head, expectedBranch: branchName, expectedHead: pr.head.sha,
+    });
+    throw new Error(`评审工作区当前检出 ${branch || "detached HEAD"}（${head.slice(0, 12)}），预期分支 ${branchName}、提交 ${pr.head.sha.slice(0, 12)}。请保留本地改动后检查工作区`);
+  }
   try {
     await handle.setBaseBranch({ baseRef });
   } catch (error) {

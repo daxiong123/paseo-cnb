@@ -157,6 +157,57 @@ test("uncertain CNB response is reconciled against the author's existing comment
   }
 });
 
+test("renewed authorization reconciles the original author's backlink and only posts for new targets", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "cnb-authorization-test-"));
+  try {
+    const events = [pr("1")];
+    const posts: string[] = [];
+    let username = "original";
+    let oldBody = "";
+    let visibleAuthor = "";
+    const client = cnb("synthetic", async (input, init) => {
+      const path = new URL(String(input)).pathname;
+      if (path.startsWith("/events/")) return Response.json(events);
+      if (path === "/user") return Response.json({ username });
+      const original = path.endsWith("/90/comments");
+      if (init?.method !== "POST") {
+        return Response.json(original && visibleAuthor ? [{ id: "1", body: oldBody, author: { username: visibleAuthor } }] : []);
+      }
+      posts.push(`${username} ${path}`);
+      const { body } = JSON.parse(String(init.body));
+      if (original) {
+        oldBody = body;
+        throw new Error("synthetic lost response");
+      }
+      return Response.json({ id: "2", body, author: { username } }, { status: 201 });
+    });
+    const config = { repositoryId: repo.id, since: now - 20_000, commentsSince: now - 20_000, commentsUsername: username };
+    const args = { file: join(dir, "state.json"), repo, config, projects: async () => ({ project: repo }),
+      workspaces: [workspace], canPublish: async () => true, client: async () => client };
+    assert.equal((await synchronizeActivity({ ...args, now, retry: false })).comments.uncertain, 1);
+
+    config.commentsSince = now + 1;
+    events.push(pr("2", now + 2));
+    assert.equal((await synchronizeActivity({ ...args, now: now + 60_000, retry: true })).comments.uncertain, 1);
+    assert.equal(posts.length, 1, "a new event for the same target cannot renew the old POST permission");
+
+    username = config.commentsUsername = "new-owner";
+    config.commentsSince = now + 60_001;
+    visibleAuthor = username;
+    assert.equal((await synchronizeActivity({ ...args, now: now + 120_000, retry: true })).comments.uncertain, 1);
+    visibleAuthor = "original";
+    assert.equal((await synchronizeActivity({ ...args, now: now + 180_000, retry: false })).comments.sent, 1);
+
+    const fresh = pr("3", now + 180_001);
+    fresh.pull_request.number = 91;
+    events.push(fresh);
+    assert.equal((await synchronizeActivity({ ...args, now: now + 240_000, retry: false })).comments.sent, 2);
+    assert.deepEqual(posts, [`original /${repo.path}/-/pulls/90/comments`, `new-owner /${repo.path}/-/pulls/91/comments`]);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("peer identity failure preserves the cursor until the referenced repository is verified", async () => {
   const dir = await mkdtemp(join(tmpdir(), "cnb-peer-test-"));
   try {

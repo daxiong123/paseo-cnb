@@ -105,10 +105,10 @@ function collectWorkspaces(workspaces: Workspace[], projects: Record<string, Rep
   return byRef;
 }
 
-async function findComment(client: Cnb, repo: Repository, target: Target, key: string, username?: string) {
+async function findComment(client: Cnb, repo: Repository, target: Target, key: string, username: string) {
   for (let page = 1; page <= 30; page++) {
     const comments = await client.comments(repo, target.resource, target.number, page);
-    if (comments.some((note) => (!username || note.author.username === username) && hasBacklink(note.body, key))) return true;
+    if (comments.some((note) => note.author.username === username && hasBacklink(note.body, key))) return true;
     if (comments.length < 100) return false;
   }
   throw new Error("CNB 评论超过核对上限，尚无法确认是否已有回链");
@@ -163,7 +163,8 @@ export async function synchronizeActivity(args: {
               const key = digest([repo.id, target.resource, target.number, workspace.id]);
               const link = state.links[key] ??= { target, workspaceId: workspace.id, issue, date: event.created_at };
               link.issue = issue;
-              if (config.commentsUsername && config.commentsSince && event.created_at >= config.commentsSince && link.comment !== "sent") {
+              if (config.commentsUsername && config.commentsSince && event.created_at >= config.commentsSince
+                && (!link.comment || link.comment === "pending")) {
                 link.comment ??= "pending";
                 link.commentSince = config.commentsSince;
               }
@@ -189,40 +190,45 @@ export async function synchronizeActivity(args: {
     state.lastSync = now;
     state.error = null;
     activeBucket = undefined;
-    const candidates = config.commentsSince && config.commentsUsername ? Object.entries(state.links).filter(([, link]) =>
-      link.commentSince === config.commentsSince && (link.comment === "pending" || link.comment === "uncertain")) : [];
-    const deliverable = candidates.flatMap(([key, link]) => {
+    const deliverable = Object.entries(state.links).flatMap(([key, link]) => {
+      const authorized = Boolean(config.commentsUsername && config.commentsSince && link.commentSince === config.commentsSince);
+      if (link.comment !== "uncertain" && !(link.comment === "pending" && authorized)) return [];
       const workspace = workspacesById.get(link.workspaceId);
       const url = workspace && projects[workspace.projectId]?.id === link.issue.repositoryId
         && matchesIssue(workspace, link.issue) && workspaceShareUrl(workspace);
-      return url ? [{ key, link, url }] : [];
+      return link.comment === "uncertain" || url ? [{ key, link, url, authorized }] : [];
     });
     if (deliverable.length) {
-      const { username } = await client.account();
-      if (username !== config.commentsUsername) throw new Error("CNB CLI 账号已切换，请关闭并重新开启评论回链以确认当前账号");
       deliverable.sort((a, b) =>
         (a.link.checkedAt ?? a.link.attemptedAt ?? 0) - (b.link.checkedAt ?? b.link.attemptedAt ?? 0));
       const retryTarget = retry ? deliverable.find(({ link }) => link.comment === "uncertain") : undefined;
-      const { key, link, url } = retryTarget ?? deliverable[0];
+      const { key, link, url, authorized } = retryTarget ?? deliverable[0];
       posting = key;
       link.checkedAt = now;
-      const author = link.comment === "uncertain" ? link.attemptedBy : username;
+      const author = link.comment === "uncertain" ? link.attemptedBy : config.commentsUsername;
+      if (!author) throw new Error("回链缺少原发送账号，无法核对评论");
       if (await findComment(client, repo, link.target, key, author)) {
         link.comment = "sent";
+      } else if (!authorized || author !== config.commentsUsername) {
+        throw new Error("未查到原账号发布的回链。原发布授权已结束，仅核对已有评论");
       } else if (link.comment === "uncertain" && (!retry || now - (link.attemptedAt ?? now) < 60_000)) {
         throw new Error("上次回链结果待确认。等待至少 1 分钟后，可手动核对并重试");
-      } else if (await args.canPublish(link.workspaceId, url, link.issue)) {
-        link.comment = "uncertain";
-        link.attemptedAt = now;
-        link.attemptedBy = username;
-        await save(file, state);
-        try {
-          await client.postComment(repo, link.target.resource, link.target.number, backlinkBody(key, url));
-        } catch (error) {
-          if (error instanceof CnbHttpError && [400, 401, 403, 404, 422, 429].includes(error.status)) link.comment = "pending";
-          throw error;
+      } else if (url) {
+        const { username } = await client.account();
+        if (username !== author) throw new Error("CNB CLI 账号已切换，请关闭并重新开启评论回链以确认当前账号");
+        if (await args.canPublish(link.workspaceId, url, link.issue)) {
+          link.comment = "uncertain";
+          link.attemptedAt = now;
+          link.attemptedBy = username;
+          await save(file, state);
+          try {
+            await client.postComment(repo, link.target.resource, link.target.number, backlinkBody(key, url));
+          } catch (error) {
+            if (error instanceof CnbHttpError && [400, 401, 403, 404, 422, 429].includes(error.status)) link.comment = "pending";
+            throw error;
+          }
+          link.comment = "sent";
         }
-        link.comment = "sent";
       }
       if (link.comment === "sent") {
         console.info("cnb.activity.backlink.sent", { repo: repo.path, target: link.target, workspaceId: link.workspaceId, posting });

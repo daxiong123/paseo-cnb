@@ -97,6 +97,7 @@ test("Issue worktree to PR, failure and feedback drafts, review, NPC, and inbox"
     let stagesAvailable = true;
     let reviewKey = "";
     let reviewWorkspace: Workspace | null = null;
+    let baseUpdates = 0;
     const token = "fake-cnb-token";
     const author = { username: "mel" };
     const issue = { number: "42", title: "修复登录", state: "open", body: "" };
@@ -218,6 +219,7 @@ test("Issue worktree to PR, failure and feedback drafts, review, NPC, and inbox"
       workspaces: {
         async list() { return { entries: [main, workspace, auto, ...(reviewWorkspace ? [reviewWorkspace] : [])], pageInfo: {} }; },
         ref(id: string) {
+          if (id === "review") return { async refresh() { return reviewWorkspace; } };
           assert.equal(id, workspace.id);
           return {
             async refresh() { return workspace; },
@@ -237,7 +239,10 @@ test("Issue worktree to PR, failure and feedback drafts, review, NPC, and inbox"
           }
           return {
             id: "review",
-            async setBaseBranch({ baseRef }: { baseRef: string }) { assert.equal(git(reviewPath, "rev-parse", baseRef), base); },
+            async setBaseBranch({ baseRef }: { baseRef: string }) {
+              assert.equal(git(reviewPath, "rev-parse", baseRef), base);
+              baseUpdates++;
+            },
           };
         },
       },
@@ -295,6 +300,22 @@ test("Issue worktree to PR, failure and feedback drafts, review, NPC, and inbox"
     const worktree = await rpc(openPullWorktree, target);
     assert.equal(worktree.id, "review");
     assert.deepEqual(await rpc(openPullWorktree, target), worktree);
+    const originalBranch = git(reviewPath, "branch", "--show-current");
+    git(reviewPath, "switch", "-c", "other-work");
+    await assert.rejects(rpc(openPullWorktree, target), /检出/);
+    assert.equal(git(reviewPath, "branch", "--show-current"), "other-work");
+    git(reviewPath, "switch", originalBranch);
+    const stored = await context.paseo.workspaces.ref(worktree.id).refresh();
+    assert.ok(stored?.metadata);
+    const originalLink = stored.metadata[pullKey];
+    delete stored.metadata[pullKey];
+    await assert.rejects(rpc(openPullWorktree, target), /关联/);
+    stored.metadata[pullKey] = originalLink;
+    commit(reviewPath, "local review notes");
+    const localHead = git(reviewPath, "rev-parse", "HEAD");
+    await assert.rejects(rpc(openPullWorktree, target), /提交/);
+    assert.equal(git(reviewPath, "rev-parse", "HEAD"), localHead);
+    assert.equal(baseUpdates, 2);
     assert.equal((await rpc(pullChecks, snapshot)).builds[0].id, "cnb-123");
     const failure = { ...target, kind: "stage" as const, build: "cnb-123", pipeline: "pipe-01", stage: "step-01" };
     await assert.rejects(rpc(pullDraft, { ...failure, stage: "different-stage" }), /不在当前构建/);
