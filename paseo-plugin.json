@@ -1,0 +1,13 @@
+{
+  "id": "better-paseo-cnb",
+  "name": "Better Paseo CNB",
+  "description": "Work with CNB issues, pull requests, and build checks in Paseo using your existing cnb-cli login.",
+  "translations": {
+    "zh-CN": {
+      "description": "复用 cnb-cli 登录，在 Paseo 中处理 CNB Issue、PR 和构建检查。"
+    }
+  },
+  "requirements": {
+    "paseo": ">=0.17.4"
+  }
+}
