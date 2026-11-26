@@ -1,49 +1,23 @@
 # Better Paseo CNB
 
-在 Paseo 侧栏打开 **CNB 待办**，选一个开放的 Issue，就能读 Markdown 正文、选择本地基准分支，并打开专门处理它的工作区。代码准备好后，可以在同一个工作区创建或评审 CNB 的 Pull Request（PR），把失败检查和评审意见带回原来的 Agent 对话。
+Better Paseo CNB brings CNB issues, pull requests (PRs), and build checks into Paseo. Use the **CNB inbox (CNB 待办)** in the sidebar to find work across repositories, and the **CNB** workspace panel to work on issues and review PRs. The plugin interface is available only in Simplified Chinese.
 
-## 第一次连接
+## Connect to CNB
 
-1. 在运行 **Paseo daemon** 的机器上准备 Paseo 0.17.4 或更高版本、Git 和 cnb-cli 1.24.14 或更高的稳定版。手机或另一台电脑连接远程 daemon 时，请在远程主机上完成登录。
-2. 以运行 daemon 的系统用户，在终端执行下面的命令。插件使用 cnb-cli 为 `cnb.cool` 管理的登录态。 [CNB CLI 使用说明](https://docs.cnb.cool/zh/develops/cnb-cli.html)
+The daemon host needs Paseo 0.17.4 or later, Git, and a stable release of cnb-cli 1.24.14 or later. Sign in with `cnb login --host cnb.cool` as the system user running the daemon, then select **检查连接** under **Settings → Plugins → Better Paseo CNB → CNB 连接**. For a remote daemon, run the login command on the remote host. If the daemon cannot find the CLI, set `CNB_CLI_PATH` in its environment to the executable's absolute path.
 
-   ```sh
-   cnb --version
-   cnb login --host cnb.cool
-   ```
+The plugin discovers CNB repositories from your Paseo projects' Git remotes. If a project has multiple CNB repositories, select one in the **CNB** workspace panel. You can also enter a full CNB repository URL there.
 
-3. 在 **设置 → 插件 → Better Paseo CNB → CNB 连接** 点 **检查连接**。看到预期的 CNB 用户名和 CLI 版本后，打开一个已在 Paseo 登记的 Git 项目。若 daemon 找不到命令，可在它的环境中设置 `CNB_CLI_PATH`，填写 cnb-cli 可执行文件的绝对路径。
-4. 在工作区打开 **CNB** 面板。插件读取 Git 实际使用的 HTTPS 远端地址，支持子组织路径和 Git 的 `insteadOf` 地址改写。同一项目的多个 worktree 共享仓库选择。多个远端对应不同 CNB 仓库时，点 **选择**。也可输入完整的仓库 HTTPS 链接，点 **校验并选择**。要重新跟随项目的 Git 配置，点 **恢复从 Git 识别**。
+## Issues, pull requests, and build checks
 
-## 从 Issue 开工
+- Filter the inbox for open or assigned issues, PRs awaiting your review, or PRs you opened. Open an issue to read it or create a Git worktree from a local base branch. In the workspace panel, link an issue to your current workspace or choose an agent model and start work with the issue as context. You can also attach an issue to a conversation by pasting its CNB URL.
+- After pushing your branch, create a PR from the workspace panel. Review files and submit inline comments, approvals, or requests for changes. You can open a review worktree for a PR from the same repository, or review a fork PR in the panel. Open the PR on CNB to merge it.
+- Turn a failed check, build-stage log, or review comment into a draft. You can preview and edit the draft before adding it to an agent's input.
 
-| 想做的事 | 在 Paseo 中怎么做 |
-| --- | --- |
-| 看团队目前有哪些工作 | 侧栏进入 **CNB 待办**，保留默认的 **全部开放 Issue**。结果按仓库分组，可翻页，也可筛选 **分配给我的 Issue**、**待我评审** 或 **我创建的 PR**。 |
-| 为 Issue 建立独立分支 | 点 **查看详情**，阅读正文，选择本地基准分支，点 **新建工作区**。Paseo 在该项目下建立 Git worktree，并打开新工作区。已有关联时直接点 **打开关联工作区**。 |
-| 让 Agent 开始实现 | 在工作区的 **CNB** 面板打开 Issue，点 **从 Issue 开工**，选择基准分支和该 daemon 可用的 Agent 模型，再点 **确认启动**。Agent 收到 Issue 标题、链接和最多 6,000 个字符的正文。 |
-| 把手头工作关联到 Issue | 在现有工作区的 **CNB** 面板打开 Issue，点 **关联到当前工作区**。以后可以从 Issue 找回这个工作区，也可以在这里 **解除关联**。 |
-| 在其他对话里引用 Issue | 打开对话附件选择器，选 **CNB Issue**，粘贴完整的 Issue 网页链接，选中结果后随消息发送。 |
+## Repository activity and data access
 
-在待办里建工作区和启动 Agent 是两个操作，可以先建分支、检查代码，再决定使用哪个模型。如果启动 Agent 失败，已建的工作区和 Issue 关联会保留。重试时，插件会核对目标工作区及实际检出的分支。若你已切换到其他任务的分支，先确认当前改动，再切回面板提示的 Issue 分支。
+Repository activity sync is optional and runs once a minute while a Paseo client is connected. Automatic backlink comments are off by default. If you enable them for a repository, the plugin uses the authorized CNB account to post the HTTPS workspace link you confirmed. Anyone who can read the resulting comment can see that link.
 
-## 提交、评审和跟进 PR
+The daemon uses your cnb-cli credentials to call the CNB API. API access depends on the CNB account's permissions, and Git fetch and push use the project's existing Git credentials. Workspace associations and confirmed links are stored in Paseo workspace metadata. Repository settings and sync state are stored on the daemon host.
 
-- **创建 PR**。先用 Git 推送当前工作区分支，再在 **CNB → 当前分支 → 新建 PR** 填写目标分支、标题和说明。已关联 Issue 时，表单会带入 Issue 标题和链接。插件会核对本地提交与 CNB 上的远端分支。
-- **评审代码**。打开 PR 的 **文件与评审**，选择文件和差异行，填写并加入逐行意见，再选择 **评论**、**批准** 或 **请求修改**，点 **提交评审**。在该 PR 内切换页签时，已写的意见会保留。源分支或目标分支推进后，请复核总结并重新选择旧意见对应的位置。
-- **检出评审版本**。同仓库 PR 可在 **操作** 页创建独立评审工作区，按当时的源提交检出并使用对应目标提交作比较。来自 Fork 的 PR 可以直接在面板里看差异和评审。需要 CodeBuddy 参与时，在开放 PR 的 **操作** 页点 **请求 NPC 评审** 并确认，插件会以当前账号向该 PR 发布一条提及 CodeBuddy 的评论。
-- **把失败或反馈带回对话**。在 **检查** 中选择失败检查或构建阶段，或从 **反馈** 选择一条评审意见。先预览、编辑生成的草稿，再选关联 Agent 追加到输入框，由你决定何时发送。没有可用关联 Agent 时可以复制草稿。要完成合并，点 **在 CNB 打开**，在原页核对最新提交、保护规则及合并方式。
-
-## 团队动态与回链
-
-浏览 Issue、创建工作区和评审 PR 都可以独立使用。团队需要自动发现关联时，再从 **CNB → 仓库动态 → 查看动态与回链设置** 开启 **自动同步**。只要有 Paseo 客户端连接该 daemon，插件会按分钟轮询仓库动态，从开启时间开始处理。重新连接后按已保存的进度补拉。同仓库引用可写为 `#42`，分支名可以包含 `issue-42`，跨仓库引用请使用完整的 CNB Issue 链接。 [CNB 仓库动态说明](https://docs.cnb.cool/zh/develops/openapi-event.html)
-
-如果还希望团队成员能从 CNB 的 Issue 或 PR 返回指定的工作区，请在已关联的工作区填写 HTTPS 回链地址。先让同事用自己的账号打开链接，点 **确认可访问并保存**，再为要接收评论的仓库启用 **自动评论回链**。此开关默认关闭。开启后，符合条件的动态可以触发插件用已授权的 CLI 账号发布工作区链接。切换 CLI 账号后，需要重新确认发布身份。发送结果显示为“待确认”时，插件会先找 CNB 已有的回链。原授权仍有效时，至少等待一分钟可点 **核对并重试**。重新开启回链后，旧授权下的记录只做核对。
-
-## 账号、权限和数据
-
-- **身份与权限**。daemon 从 cnb-cli 的 Git 凭据助手取得当前账号的访问凭据，在 daemon 上请求 CNB API。阅读 Issue、读取构建日志、发布 PR 和评审分别取决于账号及凭据对该仓库的权限。本地 Git 的推送和拉取沿用项目已有的 Git 凭据。
-- **保存位置**。手动选择的仓库、自动同步开关和回链授权账号保存在该 daemon 的插件设置里。Issue 关联、PR 关联、经确认的回链地址写入 Paseo 工作区元数据。同步游标、事件关联和评论投递状态保存在 daemon 主机上。
-- **内容去向**。启动 Agent 时选中的 Issue 资料会进入该 Agent 的对话。提交评审会把评审正文和逐行意见发给 CNB，开启回链后，目标仓库中能读到相应评论的成员也能看到你保存的工作区链接。Paseo 访问权限仍由你的分享方式决定。
-
-若能看到仓库却看不到预期的 Issue，先确认待办筛选为 **全部开放 Issue**，再点 **刷新**，查看对应仓库名下的结果或错误。Git 地址刚变更时，在工作区点 **重新读取**。登录检查成功但某个仓库返回 403 时，请核对当前账号及凭据对该仓库相应资源的权限。
+Starting an agent from an issue sends its title, URL, and up to 6,000 characters of its body to the selected agent. Issue attachments and drafts you send also become part of the conversation and can be sent to the agent provider. Submitted PRs, reviews, and backlink comments go to CNB.

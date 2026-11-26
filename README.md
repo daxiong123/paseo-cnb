@@ -103,7 +103,7 @@ paseo plugin ls better-paseo-cnb
 
 `index.client.tsx` 注册设置、工作区面板、待办和附件入口。`index.server.ts` 注册 daemon 端 RPC。界面在 `client/`，跨端契约在 `shared/`，Git、鉴权、CNB API 与同步实现在 `server/`。本地测试位于 `tests/`，使用临时 Git 仓库、模拟 CNB 响应和 Paseo SDK 测试替身。
 
-日常交付先运行 `npm run typecheck` 和 `npm test`，再重载插件并核对实际入口。隔离 daemon 可以验证创建 worktree、解绑改绑和分支保护；私有仓库的 Git 权限、真实评审回写以及同事能否打开回链，需要在获准用于联调的仓库验收。 [开发方案与验收场景](docs/development-plan.md) · [开发维护约定](AGENTS.md) · [Paseo 安装页概览](OVERVIEW.md)
+日常交付先运行 `npm run typecheck` 和 `npm test`，再重载插件并核对实际入口。隔离 daemon 可以验证创建 worktree、解绑改绑和分支保护；私有仓库的 Git 权限、真实评审回写以及同事能否打开回链，需要在获准用于联调的仓库验收。 [开发方案与验收场景](docs/development-plan.md) · [开发维护约定](AGENTS.md) · [Paseo 安装页概览](OVERVIEW.zh-CN.md)
 
 ## 致谢
 
