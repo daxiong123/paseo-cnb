@@ -17,6 +17,7 @@ const linkSchema = z.object({
   date: z.number(),
   comment: z.enum(["pending", "uncertain", "sent"]).optional(),
   commentSince: z.number().optional(),
+  checkedAt: z.number().optional(),
   attemptedAt: z.number().optional(),
   attemptedBy: z.string().optional(),
 });
@@ -199,11 +200,12 @@ export async function synchronizeActivity(args: {
     if (deliverable.length) {
       const { username } = await client.account();
       if (username !== config.commentsUsername) throw new Error("CNB CLI 账号已切换，请关闭并重新开启评论回链以确认当前账号");
-      deliverable.sort((a, b) => (a.link.attemptedAt ?? 0) - (b.link.attemptedAt ?? 0));
-      const next = deliverable.find(({ link }) => link.comment === (retry ? "uncertain" : "pending")) ?? deliverable[0];
-      const { key, link, url } = next;
+      deliverable.sort((a, b) =>
+        (a.link.checkedAt ?? a.link.attemptedAt ?? 0) - (b.link.checkedAt ?? b.link.attemptedAt ?? 0));
+      const retryTarget = retry ? deliverable.find(({ link }) => link.comment === "uncertain") : undefined;
+      const { key, link, url } = retryTarget ?? deliverable[0];
       posting = key;
-      if (link.comment === "pending") link.attemptedAt = now;
+      link.checkedAt = now;
       const author = link.comment === "uncertain" ? link.attemptedBy : username;
       if (await findComment(client, repo, link.target, key, author)) {
         link.comment = "sent";

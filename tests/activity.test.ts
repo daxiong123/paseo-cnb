@@ -210,6 +210,50 @@ test("a denied backlink does not block the next target", async () => {
   }
 });
 
+for (const manual of [false, true]) {
+  test(manual
+    ? "manual reconciliation confirms a later comment when the oldest target denies access"
+    : "automatic reconciliation confirms a later comment when the oldest comment is absent", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "cnb-reconciliation-test-"));
+    try {
+      const first = pr("1");
+      const second = { ...pr("2"), pull_request: { ...first.pull_request, number: 91 } };
+      const posts: string[] = [];
+      let recorded = "";
+      const client = cnb("synthetic", async (input, init) => {
+        const path = new URL(String(input)).pathname;
+        if (path.startsWith("/events/")) return Response.json([first, second]);
+        if (path === "/user") return Response.json({ username: "owner" });
+        const later = path.endsWith("/91/comments");
+        if (init?.method === "POST") {
+          posts.push(path);
+          if (later) recorded = JSON.parse(String(init.body)).body;
+          throw new Error("synthetic connection loss");
+        }
+        if (!later && manual && posts.length === 2) return Response.json({}, { status: 403 });
+        return Response.json(later && recorded ? [{ id: "123", body: recorded, author: { username: "owner" } }] : []);
+      });
+      const args = {
+        file: join(dir, "state.json"), repo, workspaces: [workspace],
+        config: { repositoryId: repo.id, since: now - 20_000, commentsSince: now - 20_000, commentsUsername: "owner" },
+        projects: async () => ({ project: repo }), canPublish: async () => true, client: async () => client,
+      };
+      await synchronizeActivity({ ...args, retry: false, now });
+      await synchronizeActivity({ ...args, retry: false, now: now + 60_000 });
+      for (let minute = 2; minute <= 3; minute++) {
+        await synchronizeActivity({ ...args, retry: manual, now: now + minute * 60_000 });
+      }
+      const { links } = await readActivityState(args.file);
+      assert.deepEqual(Object.values(links).map((link) => [link.target.number, link.comment]).sort(), [
+        ["90", "uncertain"], ["91", "sent"],
+      ]);
+      assert.deepEqual(posts, [90, 91].map((number) => `/${repo.path}/-/pulls/${number}/comments`));
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+}
+
 test("unconfirmed writes stay pending until explicitly retried, and revoked approval stops publication", async () => {
   const dir = await mkdtemp(join(tmpdir(), "cnb-retry-test-"));
   try {
